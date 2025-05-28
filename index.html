@@ -32,7 +32,6 @@
             background: rgba(0, 0, 0, 0.3);
             padding: 10px;
             border-radius: 5px;
-            transition: opacity 0.3s ease;
         }
         
         #crosshair {
@@ -44,7 +43,7 @@
             height: 20px;
             z-index: 100;
             pointer-events: none;
-            transition: all 0.3s ease;
+            transition: transform 0.2s ease, opacity 0.2s ease;
         }
         
         #crosshair::before,
@@ -53,7 +52,6 @@
             position: absolute;
             background: #00ff00;
             box-shadow: 0 0 5px #00ff00;
-            transition: all 0.3s ease;
         }
         
         #crosshair::before {
@@ -68,69 +66,6 @@
             height: 2px;
             top: 50%;
             transform: translateY(-50%);
-        }
-        
-        /* Mira telescópica */
-        #scope {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: radial-gradient(circle at center, transparent 25%, rgba(0,0,0,0.8) 25.5%, rgba(0,0,0,0.8) 100%);
-            display: none;
-            z-index: 150;
-            pointer-events: none;
-        }
-        
-        #scope::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: rgba(255, 255, 255, 0.8);
-            transform: translateY(-50%);
-        }
-        
-        #scope::after {
-            content: '';
-            position: absolute;
-            left: 50%;
-            top: 0;
-            bottom: 0;
-            width: 2px;
-            background: rgba(255, 255, 255, 0.8);
-            transform: translateX(-50%);
-        }
-        
-        #scopeCenter {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 4px;
-            height: 4px;
-            background: rgba(255, 0, 0, 0.8);
-            border-radius: 50%;
-            z-index: 160;
-            pointer-events: none;
-            display: none;
-        }
-        
-        /* Quando está mirando */
-        .aiming #crosshair {
-            opacity: 0;
-        }
-        
-        .aiming #ui {
-            opacity: 0.3;
-        }
-        
-        .aiming #scope,
-        .aiming #scopeCenter {
-            display: block;
         }
         
         #instructions {
@@ -174,7 +109,6 @@
             border: 2px solid #fff;
             border-radius: 10px;
             z-index: 100;
-            transition: opacity 0.3s ease;
         }
         
         #healthFill {
@@ -183,20 +117,6 @@
             border-radius: 8px;
             width: 100%;
             transition: width 0.3s ease;
-        }
-        
-        #aimingIndicator {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            color: #ffaa00;
-            font-size: 16px;
-            font-weight: bold;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 10px;
-            border-radius: 5px;
-            display: none;
-            z-index: 100;
         }
         
         canvas {
@@ -214,19 +134,14 @@
         
         <div id="crosshair"></div>
         
-        <div id="scope"></div>
-        <div id="scopeCenter"></div>
-        
-        <div id="aimingIndicator">🎯 MIRANDO - Zoom 2x</div>
-        
         <div id="healthBar">
             <div id="healthFill"></div>
         </div>
         
         <div id="instructions">
-            <div><strong>WASD</strong> - Mover | <strong>Mouse</strong> - Olhar | <strong>Click Esquerdo</strong> - Atirar</div>
-            <div><strong>Click Direito</strong> - Mirar/Zoom | <strong>R</strong> - Recarregar | <strong>Shift</strong> - Correr</div>
-            <div><strong>Space</strong> - Pular | <strong>🎯 HEADSHOT</strong> - Mire na bola vermelha! (200 pts)</div>
+            <div><strong>WASD</strong> - Mover | <strong>Mouse</strong> - Olhar | <strong>Click Esq.</strong> - Atirar | <strong>Click Dir.</strong> - Toggle Zoom</div>
+            <div><strong>R</strong> - Recarregar | <strong>Shift</strong> - Correr | <strong>Space</strong> - Pular</div>
+            <div><strong>🎯 HEADSHOT</strong> - Mire na bola vermelha para eliminar com 1 tiro! (200 pts)</div>
         </div>
         
         <div id="gameOver">
@@ -247,16 +162,14 @@
             ammo: 30,
             maxAmmo: 30,
             isGameOver: false,
-            isReloading: false,
-            isAiming: false
+            isReloading: false
         };
         
         // Controles
         let keys = {};
         let mouse = { x: 0, y: 0, sensitivity: 0.002 };
         let isPointerLocked = false;
-        let originalFOV = 75;
-        let aimingFOV = 35; // FOV menor para zoom
+        let isAiming = false;
         
         // Inicialização
         function init() {
@@ -265,7 +178,7 @@
             scene.fog = new THREE.Fog(0x000000, 1, 1000);
             
             // Câmera
-            camera = new THREE.PerspectiveCamera(originalFOV, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 1.6, 0);
             
             // Renderer
@@ -309,37 +222,29 @@
                 keys[e.code] = false;
             });
             
-            // Mouse clicks
-            document.addEventListener('mousedown', (e) => {
+            // Mouse - apenas botão esquerdo atira
+            document.addEventListener('click', (e) => {
                 if (gameState.isGameOver) {
-                    if (e.button === 0) { // Left click
-                        restartGame();
-                    }
+                    restartGame();
                     return;
                 }
                 
                 if (!isPointerLocked) {
                     renderer.domElement.requestPointerLock();
-                    return;
-                }
-                
-                if (e.button === 0) { // Left click - Shoot
+                } else if (e.button === 0) { // Apenas botão esquerdo
                     shoot();
-                } else if (e.button === 2) { // Right click - Aim
-                    startAiming();
                 }
-                
-                e.preventDefault();
             });
             
-            document.addEventListener('mouseup', (e) => {
-                if (e.button === 2 && gameState.isAiming) { // Right click release
-                    stopAiming();
+            // Botão direito para toggle da mira
+            document.addEventListener('mousedown', (e) => {
+                if (e.button === 2 && isPointerLocked && !gameState.isGameOver) {
+                    e.preventDefault();
+                    toggleAiming();
                 }
-                e.preventDefault();
             });
             
-            // Prevent context menu
+            // Prevenir menu de contexto no botão direito
             document.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
             });
@@ -347,65 +252,46 @@
             document.addEventListener('pointerlockchange', () => {
                 isPointerLocked = document.pointerLockElement === renderer.domElement;
                 document.getElementById('instructions').style.display = isPointerLocked ? 'none' : 'block';
-                
-                if (!isPointerLocked && gameState.isAiming) {
-                    stopAiming();
-                }
             });
             
             document.addEventListener('mousemove', (e) => {
                 if (!isPointerLocked || gameState.isGameOver) return;
                 
-                // Sensibilidade reduzida quando está mirando
-                const sensitivity = gameState.isAiming ? mouse.sensitivity * 0.3 : mouse.sensitivity;
-                
+                const sensitivity = isAiming ? mouse.sensitivity * 0.3 : mouse.sensitivity;
                 mouse.x -= e.movementX * sensitivity;
                 mouse.y -= e.movementY * sensitivity;
                 mouse.y = Math.max(-Math.PI/2, Math.min(Math.PI/2, mouse.y));
             });
         }
         
+        function toggleAiming() {
+            if (isAiming) {
+                stopAiming();
+            } else {
+                startAiming();
+            }
+        }
+        
         function startAiming() {
-            if (gameState.isAiming) return;
+            isAiming = true;
+            // Zoom da câmera para mira
+            camera.fov = 30;
+            camera.updateProjectionMatrix();
             
-            gameState.isAiming = true;
-            document.body.classList.add('aiming');
-            document.getElementById('aimingIndicator').style.display = 'block';
-            
-            // Animar FOV para zoom
-            animateFOV(camera.fov, aimingFOV, 200);
+            // Tornar crosshair mais preciso
+            document.getElementById('crosshair').style.transform = 'translate(-50%, -50%) scale(0.5)';
+            document.getElementById('crosshair').style.opacity = '0.8';
         }
         
         function stopAiming() {
-            if (!gameState.isAiming) return;
+            isAiming = false;
+            // Voltar ao FOV normal
+            camera.fov = 75;
+            camera.updateProjectionMatrix();
             
-            gameState.isAiming = false;
-            document.body.classList.remove('aiming');
-            document.getElementById('aimingIndicator').style.display = 'none';
-            
-            // Voltar FOV normal
-            animateFOV(camera.fov, originalFOV, 200);
-        }
-        
-        function animateFOV(from, to, duration) {
-            const startTime = Date.now();
-            
-            function updateFOV() {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                
-                // Easing function para suavizar a animação
-                const easeProgress = 1 - Math.pow(1 - progress, 3);
-                
-                camera.fov = from + (to - from) * easeProgress;
-                camera.updateProjectionMatrix();
-                
-                if (progress < 1) {
-                    requestAnimationFrame(updateFOV);
-                }
-            }
-            
-            updateFOV();
+            // Voltar crosshair ao normal
+            document.getElementById('crosshair').style.transform = 'translate(-50%, -50%) scale(1)';
+            document.getElementById('crosshair').style.opacity = '1';
         }
         
         function createWorld() {
@@ -572,15 +458,6 @@
             const direction = new THREE.Vector3(0, 0, -1);
             direction.applyQuaternion(camera.quaternion);
             
-            // Precisão melhorada quando está mirando
-            if (!gameState.isAiming) {
-                // Adicionar um pouco de imprecisão quando não está mirando
-                direction.x += (Math.random() - 0.5) * 0.05;
-                direction.y += (Math.random() - 0.5) * 0.05;
-                direction.z += (Math.random() - 0.5) * 0.05;
-                direction.normalize();
-            }
-            
             bullet.userData = {
                 direction: direction,
                 speed: 50,
@@ -637,7 +514,7 @@
             camera.rotation.y = mouse.x;
             camera.rotation.x = mouse.y;
             
-            // Movimento (mais lento quando está mirando)
+            // Movimento
             const moveVector = new THREE.Vector3();
             
             if (keys['KeyW']) moveVector.z -= 1;
@@ -649,18 +526,12 @@
             moveVector.applyQuaternion(camera.quaternion);
             moveVector.y = 0;
             
-            let speed = player.speed;
-            if (keys['ShiftLeft'] && !gameState.isAiming) {
-                speed *= 1.5; // Não pode correr enquanto mira
-            } else if (gameState.isAiming) {
-                speed *= 0.3; // Movimento lento quando mirando
-            }
-            
+            const speed = keys['ShiftLeft'] ? player.speed * 1.5 : player.speed;
             player.velocity.x = moveVector.x * speed;
             player.velocity.z = moveVector.z * speed;
             
-            // Pulo (desabilitado quando mirando)
-            if (keys['Space'] && player.isGrounded && !gameState.isAiming) {
+            // Pulo
+            if (keys['Space'] && player.isGrounded) {
                 player.velocity.y = player.jumpPower;
                 player.isGrounded = false;
             }
@@ -844,4 +715,87 @@
                 particle.userData.velocity.y -= 10 * deltaTime;
                 particle.userData.life--;
                 
-                
+                if (particle.userData.life <= 0) {
+                    scene.remove(particle);
+                    particles.splice(i, 1);
+                }
+            }
+        }
+        
+        function updateUI() {
+            document.getElementById('score').textContent = gameState.score;
+            document.getElementById('enemyCount').textContent = enemies.filter(e => e.userData.isAlive).length;
+            document.getElementById('ammo').textContent = `${gameState.ammo}/${gameState.maxAmmo}`;
+            
+            const healthPercent = Math.max(0, gameState.health);
+            document.getElementById('healthFill').style.width = healthPercent + '%';
+        }
+        
+        function gameOver() {
+            gameState.isGameOver = true;
+            document.getElementById('finalScore').textContent = gameState.score;
+            document.getElementById('gameOver').style.display = 'block';
+            document.exitPointerLock();
+        }
+        
+        function restartGame() {
+            // Reset game state
+            gameState.score = 0;
+            gameState.health = 100;
+            gameState.ammo = 30;
+            gameState.isGameOver = false;
+            gameState.isReloading = false;
+            
+            // Reset aiming
+            isAiming = false;
+            camera.fov = 75;
+            camera.updateProjectionMatrix();
+            document.getElementById('crosshair').style.transform = 'translate(-50%, -50%) scale(1)';
+            document.getElementById('crosshair').style.opacity = '1';
+            
+            // Limpar arrays
+            bullets.forEach(bullet => scene.remove(bullet));
+            enemies.forEach(enemy => scene.remove(enemy));
+            particles.forEach(particle => scene.remove(particle));
+            
+            bullets = [];
+            enemies = [];
+            particles = [];
+            
+            // Reset player
+            player.position.set(0, 1.6, 0);
+            mouse.x = 0;
+            mouse.y = 0;
+            
+            // Spawnar inimigos
+            spawnEnemies();
+            
+            document.getElementById('gameOver').style.display = 'none';
+            updateUI();
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const deltaTime = clock.getDelta();
+            
+            updatePlayer(deltaTime);
+            updateEnemies(deltaTime);
+            updateBullets(deltaTime);
+            updateParticles(deltaTime);
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Redimensionar janela
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Iniciar jogo
+        init();
+    </script>
+</body>
+</html>
